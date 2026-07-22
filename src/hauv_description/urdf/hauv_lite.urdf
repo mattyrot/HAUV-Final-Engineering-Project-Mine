@@ -1,0 +1,283 @@
+<?xml version="1.0"?>
+<!--
+  HAUV - LIGHTWEIGHT URDF for RViz2 on low-power hardware (Atom / UP Board).
+
+  NO MESHES AT ALL. Every part is a URDF primitive (box / cylinder / sphere),
+  so there are no STLs to load and roughly 3k triangles total instead of the
+  2.03 M in hauv.urdf. Decimating the vendor meshes would not have got close -
+  the T200 alone is 186k triangles before you copy it six times.
+
+  Dimensions are the real CAD numbers, not eyeballed:
+    tube      OD 127, 300 long          dome      R 63.5 hemisphere
+    T200      OD 97.3, 88 long          Lumen     OD 38, 78 long
+    Subsonus  OD 106, 93.4 tall         DVL head  OD 83.7, 44.3 tall
+  So it is dimensionally honest for reach/clearance checks - it just has no
+  surface detail.
+
+  LINK AND JOINT NAMES ARE IDENTICAL to hauv.urdf, so this is a drop-in swap:
+  the same motor_to_joint_states.py and the same TF consumers work unchanged.
+
+  Frame: X forward, Y port, Z up, origin on the tube axis, centred fore-aft.
+  Everything here is in METRES - there is no mesh scale factor to get wrong.
+
+  One improvement over the mesh version: because the geometry is generated
+  rather than imported, each thruster joint sits exactly on its duct centre.
+  The mesh URDF is up to 4.25 mm off there (it was placed by bounding-box
+  centre, and Fusion's box is conservative for rotated bodies).
+-->
+<robot name="hauv">
+
+  <material name="alu">      <color rgba="0.72 0.74 0.76 1.0"/></material>
+  <material name="acrylic">  <color rgba="0.80 0.90 1.00 0.35"/></material>
+  <material name="cw_green"> <color rgba="0.13 0.45 0.20 1.0"/></material>
+  <material name="ccw_blue"> <color rgba="0.13 0.18 0.45 1.0"/></material>
+  <material name="lightblue"><color rgba="0.45 0.70 0.90 1.0"/></material>
+  <material name="pcb_green"><color rgba="0.10 0.35 0.15 1.0"/></material>
+  <material name="dark">     <color rgba="0.20 0.20 0.22 1.0"/></material>
+  <material name="grey">     <color rgba="0.55 0.55 0.58 1.0"/></material>
+
+  <link name="base_link">
+
+    <!-- pressure tube: OD 127, X -172.6 .. 127.4 -->
+    <visual><origin xyz="-0.0226 0 0" rpy="0 1.5707963 0"/>
+      <geometry><cylinder radius="0.0635" length="0.300"/></geometry>
+      <material name="alu"/></visual>
+
+    <!-- aft cap flange OD 137, and the Bar30 boss hanging below it -->
+    <visual><origin xyz="-0.1786 0 0" rpy="0 1.5707963 0"/>
+      <geometry><cylinder radius="0.0685" length="0.012"/></geometry>
+      <material name="alu"/></visual>
+    <visual><origin xyz="-0.1795 0 -0.075" rpy="0 0 0"/>
+      <geometry><box size="0.013 0.026 0.040"/></geometry>
+      <material name="alu"/></visual>
+
+    <!-- forward dome, R 63.5 at X 127.4 (aft half is hidden inside the tube) -->
+    <visual><origin xyz="0.1274 0 0" rpy="0 0 0"/>
+      <geometry><sphere radius="0.0635"/></geometry>
+      <material name="acrylic"/></visual>
+
+    <!-- thruster mounts: collars, rails, cross-pieces, stubs, spine -->
+    <visual><origin xyz="0.095 0 0" rpy="0 1.5707963 0"/>
+      <geometry><cylinder radius="0.076" length="0.016"/></geometry>
+      <material name="alu"/></visual>
+    <visual><origin xyz="-0.140 0 0" rpy="0 1.5707963 0"/>
+      <geometry><cylinder radius="0.076" length="0.016"/></geometry>
+      <material name="alu"/></visual>
+
+    <visual><origin xyz="0.205 0.095 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.220 0.020 0.012"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="0.205 -0.095 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.220 0.020 0.012"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="-0.2275 0.095 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.175 0.020 0.012"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="-0.2275 -0.095 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.175 0.020 0.012"/></geometry><material name="alu"/></visual>
+
+    <visual><origin xyz="0.305 0 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.020 0.210 0.012"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="-0.305 0 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.020 0.210 0.012"/></geometry><material name="alu"/></visual>
+
+    <visual><origin xyz="0.095 0.065 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.016 0.080 0.012"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="0.095 -0.065 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.016 0.080 0.012"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="-0.140 0.065 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.016 0.080 0.012"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="-0.140 -0.065 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.016 0.080 0.012"/></geometry><material name="alu"/></visual>
+
+    <!-- spine (carries the Subsonus) + forward shelf (carries the upper lights) -->
+    <visual><origin xyz="-0.0225 0 0.073" rpy="0 0 0"/>
+      <geometry><box size="0.251 0.090 0.010"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="0.1215 0 0.073" rpy="0 0 0"/>
+      <geometry><box size="0.037 0.150 0.010"/></geometry><material name="alu"/></visual>
+
+    <!-- internals -->
+    <visual><origin xyz="-0.0236 0 -0.032" rpy="0 0 0"/>
+      <geometry><box size="0.244 0.090 0.004"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="-0.0919 0 -0.0020" rpy="0 0 0"/>
+      <geometry><box size="0.1163 0.0858 0.0561"/></geometry><material name="dark"/></visual>
+    <visual><origin xyz="0.0125 0 0.0008" rpy="0 0 0"/>
+      <geometry><box size="0.085 0.056 0.018"/></geometry><material name="pcb_green"/></visual>
+    <visual><origin xyz="0.077 0 0.0193" rpy="0 0 0"/>
+      <geometry><box size="0.052 0.028 0.0146"/></geometry><material name="pcb_green"/></visual>
+    <visual><origin xyz="-0.050 0 0.0365" rpy="0 0 0"/>
+      <geometry><box size="0.180 0.065 0.020"/></geometry><material name="lightblue"/></visual>
+    <visual><origin xyz="0.0359 0 -0.019" rpy="0 0 0"/>
+      <geometry><box size="0.135 0.065 0.020"/></geometry><material name="lightblue"/></visual>
+
+    <!-- DVL transducer, external, looking down -->
+    <visual><origin xyz="-0.085 0 -0.08615" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04185" length="0.0443"/></geometry>
+      <material name="dark"/></visual>
+
+    <collision><origin xyz="-0.0226 0 0" rpy="0 1.5707963 0"/>
+      <geometry><cylinder radius="0.0635" length="0.300"/></geometry></collision>
+
+    <inertial>
+      <origin xyz="-0.02 0 -0.01" rpy="0 0 0"/>
+      <mass value="5.531"/>
+      <inertia ixx="0.045" ixy="0" ixz="0" iyy="0.180" iyz="0" izz="0.180"/>
+    </inertial>
+  </link>
+
+  <!-- ===== thrusters: OD 97.3 x 88 duct, continuous about local +X ======
+       Cylinder is modelled along the link's local Z and the joint rpy turns
+       local Z onto the thrust axis, so the spin axis stays 0 0 1 here.       -->
+
+  <link name="t1_front_left">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="cw_green"/></visual>
+  </link>
+  <joint name="t1_front_left_joint" type="continuous">
+    <parent link="base_link"/><child link="t1_front_left"/>
+    <origin xyz="0.250 0.095 -0.0144" rpy="0 1.5707963 0.7853982"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="t2_front_right">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="ccw_blue"/></visual>
+  </link>
+  <joint name="t2_front_right_joint" type="continuous">
+    <parent link="base_link"/><child link="t2_front_right"/>
+    <origin xyz="0.250 -0.095 -0.0144" rpy="0 1.5707963 -0.7853982"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="t3_rear_left">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="ccw_blue"/></visual>
+  </link>
+  <joint name="t3_rear_left_joint" type="continuous">
+    <parent link="base_link"/><child link="t3_rear_left"/>
+    <origin xyz="-0.250 0.095 -0.0144" rpy="0 1.5707963 -0.7853982"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="t4_rear_right">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="cw_green"/></visual>
+  </link>
+  <joint name="t4_rear_right_joint" type="continuous">
+    <parent link="base_link"/><child link="t4_rear_right"/>
+    <origin xyz="-0.250 -0.095 -0.0144" rpy="0 1.5707963 0.7853982"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="t5_vert_front">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="cw_green"/></visual>
+  </link>
+  <joint name="t5_vert_front_joint" type="continuous">
+    <parent link="base_link"/><child link="t5_vert_front"/>
+    <origin xyz="0.305 0 -0.0063" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <link name="t6_vert_rear">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="ccw_blue"/></visual>
+  </link>
+  <joint name="t6_vert_rear_joint" type="continuous">
+    <parent link="base_link"/><child link="t6_vert_rear"/>
+    <origin xyz="-0.305 0 -0.0063" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <!-- ===== lights: OD 38 x 78, lens forward ===== -->
+
+  <link name="light_lower_left">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.019" length="0.078"/></geometry>
+      <material name="grey"/></visual>
+  </link>
+  <joint name="light_lower_left_joint" type="fixed">
+    <parent link="base_link"/><child link="light_lower_left"/>
+    <origin xyz="0.150 0.095 -0.104" rpy="0 1.5707963 0"/>
+  </joint>
+
+  <link name="light_lower_right">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.019" length="0.078"/></geometry>
+      <material name="grey"/></visual>
+  </link>
+  <joint name="light_lower_right_joint" type="fixed">
+    <parent link="base_link"/><child link="light_lower_right"/>
+    <origin xyz="0.150 -0.095 -0.104" rpy="0 1.5707963 0"/>
+  </joint>
+
+  <link name="light_upper_left">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.019" length="0.078"/></geometry>
+      <material name="grey"/></visual>
+  </link>
+  <joint name="light_upper_left_joint" type="fixed">
+    <parent link="base_link"/><child link="light_upper_left"/>
+    <origin xyz="0.150 0.045 0.1047" rpy="0 1.5707963 0"/>
+  </joint>
+
+  <link name="light_upper_right">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.019" length="0.078"/></geometry>
+      <material name="grey"/></visual>
+  </link>
+  <joint name="light_upper_right_joint" type="fixed">
+    <parent link="base_link"/><child link="light_upper_right"/>
+    <origin xyz="0.150 -0.045 0.1047" rpy="0 1.5707963 0"/>
+  </joint>
+
+  <!-- ===== sensors ===== -->
+
+  <link name="subsonus">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.053" length="0.0934"/></geometry>
+      <material name="grey"/></visual>
+  </link>
+  <joint name="subsonus_joint" type="fixed">
+    <parent link="base_link"/><child link="subsonus"/>
+    <origin xyz="-0.0558 0 0.1253" rpy="0 0 0"/>
+  </joint>
+
+  <link name="bar30">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.008" length="0.032"/></geometry>
+      <material name="dark"/></visual>
+  </link>
+  <joint name="bar30_joint" type="fixed">
+    <parent link="base_link"/><child link="bar30"/>
+    <origin xyz="-0.1785 0 -0.091" rpy="0 0 0"/>
+  </joint>
+
+  <link name="indicator">
+    <visual><origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.008" length="0.0362"/></geometry>
+      <material name="dark"/></visual>
+  </link>
+  <joint name="indicator_joint" type="fixed">
+    <parent link="base_link"/><child link="indicator"/>
+    <origin xyz="-0.1719 0 0.025" rpy="0 1.5707963 0"/>
+  </joint>
+
+  <!-- ===== reference frames ===== -->
+
+  <link name="camera_link"/>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/><child link="camera_link"/>
+    <origin xyz="0.1274 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link name="dvl_link"/>
+  <joint name="dvl_joint" type="fixed">
+    <parent link="base_link"/><child link="dvl_link"/>
+    <origin xyz="-0.0850 0 -0.1083" rpy="0 0 0"/>
+  </joint>
+
+</robot>

@@ -1,296 +1,275 @@
+# HAUV — Hybrid Autonomous Underwater Vehicle
 
-![HAUV Logo](https://github.com/user-attachments/assets/c04aa1a3-2150-4c63-8d7c-6ad1716fded0)
+A compact underwater robot you drive from a laptop with a game controller — or
+point at a spot on the map and let it swim there by itself.
 
-**HAUV** is a compact underwater vehicle designed to enhance underwater exploration. 
-Equipped with advanced navigation systems and a suite of sensors, HAUV serves as an essential tool for pre-diving operations, marking objects of interest, and streamlining processes for divers, thereby increasing operational efficiency and safety.
+It runs **ROS 2 Foxy** across two computers, talks to **QGroundControl** over
+either an Ethernet tether or an **acoustic (USBL) link**, and looks after itself
+with a leak failsafe that surfaces the vehicle without any help from the operator.
 
-See the final project report [here](https://github.com/user-attachments/files/16645635/fin-2024-038.pdf).
+![The HAUV and its main parts](pics/hauv_numbered.jpg)
 
+| # | Part | What it does |
+|---|------|--------------|
+| 1 | **Subsonus (USBL modem)** | Acoustic link to the surface — control with no cable |
+| 2 | **Electronics tray** | The two computers and their boards |
+| 3 | **Lights** | Two switchable sets |
+| 4 | **Thrusters** | 6 × Blue Robotics T200 |
+| 5 | **Camera** | Live video to the operator screen |
+| 6 | **DVL** | Speed over the sea floor |
 
+---
 
-<details>
-<summary>Prerequisites</summary>
+## Highlights
 
-### On ESP32 (RT MCU)
+- **Two control links** — Ethernet tether (full telemetry + video) or acoustic
+  USBL (compact telemetry, no cable, no video).
+- **Auto-GOTO / Guided mode** — click a point in QGC, the vehicle turns, swims
+  there, **holds depth** on the way and **station-keeps** on arrival.
+- **Leak → auto-surface failsafe** — runs on the vehicle itself, so it still
+  works with the link cut.
+- **Link-loss failsafe** — thrusters stop if the operator link goes quiet.
+- **Attitude safety envelope** — scales back thrust when pitch/roll get extreme.
+- **One-command operation** — `./hauv.sh` starts, checks and inspects everything.
 
-1. **Micro-ROS-Arduino Setup**: Install the micro-ROS library for Arduino on the ESP32 to enable ROS2 communication.
+---
 
-You can find the latest version for micro-ros-arduino-foxy in the releases tab [here](https://github.com/micro-ROS/micro_ros_arduino)
+## Architecture
 
-### On UP Board (Main PC)
+Work is split across two computers. Knowing which does what makes debugging much
+faster.
 
-1. **ROS2 Foxy Installation**: Follow the official ROS2 documentation to install ROS2 Foxy on Ubuntu 20.04 running on the UP board (for ubuntu 22.04 install the supported ROS2 Humble instead).
-2. **Clone this repository using:**
+| Computer | Role |
+|----------|------|
+| **UP Board** (Ubuntu 20.04, ROS 2 Foxy) | The brain — guidance, sensor fusion, navigation, QGC telemetry |
+| **ESP32** (micro-ROS over serial) | The muscles — motor PWM, lights, and the depth / IMU / leak sensors |
 
-`git clone git@github.com:talshva/HAUV-Final-Engineering-Project.git` 
+```
+ESP32 sensors ──micro-ROS──> /esp32/bno055_data, /esp32/bar100_data, /esp32/leak
+DVL (Ethernet) ────────────> /dvl/velocity_data
+GPS ───────────────────────> /gps/fix
+Joystick / QGC ────────────> /joy  |  /joy_acoustic
+                                      │
+                                guidance_node
+                                      │
+                /motor_data, /lights_servo_data ──> ESP32 PWM outputs
+                                      │
+                    mavlink_bridge_node ──> QGC   (Ethernet, UDP 14550)
+                    acoustic_bridge_node ─> QGC   (acoustic link)
+```
 
-to download the workspace into the UP boards.
+### Inside the electronics tray
 
-3. **ROS Agent**: Install `micro-ros-agent` on the UP board to facilitate communication between ROS2 and micro-ROS on the ESP32.
-4. **Arduino CLI**: Install the Arduino CLI on the UP board to allow code editing, compilation, and flashing of the ESP32 over UART via SSH.
-   
-Don't forget to download the relevant libraries to the Arudino folder in the home directory of the UP board.
-> Another great alternative is PlatformIO.
+![Electronics tray](pics/electronics%20numbered.png)
 
-### Using the arduino CLI to flash the esp32:
+| # | Board |
+|---|-------|
+| 1 | **UP Board** — the main computer (large heatsink) |
+| 2 | **Indicator light** — solid = ESP32 talking to ROS 2, off = link down |
+| 3 | **ESP32** — real-time motor and sensor controller |
+| 4 | **Thruster** |
+| 5 | **I²C connector** — to the temperature sensor |
+| 6 | **GPS antenna** |
 
-1. Go to main sketch directory:
-   
-`cd ~/rov_ws/src/esp_sketches/rov_esp_main`
+---
 
-3. Edit the desired code using nano or VScode IDE.
-4. Compile the code:
-   
-`arduino-cli compile --fqbn esp32:esp32:esp32da rov_esp_main.ino`
+## Quick start
 
-5. Flash the code onto the esp32:
-   
-`arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:esp32da rov_esp_main.ino`
+Everything is driven by one script on the UP Board:
 
-if upload failed, check that the USB port is not used by something else.
+```bash
+./hauv.sh start              # start the full stack (Ethernet / tethered)
+./hauv.sh start --acoustic   # start in acoustic mode (no cable)
+./hauv.sh check              # sample every sensor, report OK / LOW / FAIL
+./hauv.sh status             # what's running
+./hauv.sh topics             # live topics and their short names
+./hauv.sh echo DEPTH         # stream one topic (no ros2 CLI needed)
+./hauv.sh view guidance      # attach to a node's log  (Ctrl-A D to detach)
+./hauv.sh stop
+```
 
-</details>
+> `check` and `echo` use a direct rclpy subscriber rather than `ros2 topic echo`,
+> because DDS CLI discovery is unreliable on this box — topics can look empty
+> while they are actually publishing.
 
-<details>
-<summary>Hardware</summary>
+The DVL reports **FAIL** out of the water. That's expected — it needs water and
+a bottom to range against.
 
-![Components](https://github.com/user-attachments/assets/38843e3d-361e-4e97-9a5d-140aa9777527)
+---
 
+## Connecting QGroundControl
 
-![ROV Diagram](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/8492f26f-86e4-493d-8b80-7392e1fb8db5)
+### Over Ethernet (normal)
 
-### Block Diagram Description
+Set your laptop to `192.168.168.100`, then add a UDP link to
+`192.168.168.101:14550`:
 
-The hardware setup of HAUV includes an array of sensors, propulsion systems, communication interfaces, and a control unit. The system diagram illustrates the following components:
+![QGC comm link setup](pics/hauv%20config.png)
 
-- **Main PC (UP Board)**: Acts as the central processing unit, running ROS2 for sensor data processing and system integration.
-- **RT MCU (ESP32 WROOM)**: Real-time microcontroller for managing lower-level controls and communication.
-- **Sensors**: 9-dof IMU (BNO055), Depth & Pressure (BAR100), Temperature & Humidity (BME280), and DVL for precise navigation and environmental monitoring.
-- **Propulsion**: 6x Blue Robotics Thrusters controlled by the ESP32 through PWM signals.
-- **Camera System**: Provides visual feedback for navigation and object detection.
-- **Lights**: Ensures visibility in underwater environments.
+> Turn **AutoConnect → UDP** *off* in QGC's General settings, or it may grab the
+> wrong endpoint and the vehicle will look dead.
 
-### Connection Overview
+### Over acoustic (untethered)
 
-- Thrusters, lights, and pan-tilt servo receive control signals from the ESP32 WROOM, which is interfaced with the main PC via serial communication.
-- The ESP32 is also responsible for low-level sensor readings and actuator controls.
+Both Subsonus units must be **in the water**. Start the vehicle with
+`./hauv.sh start --acoustic`, then run **one** instance of the PC-side bridge and
+point QGC at `127.0.0.1:14551`:
 
-</details>
+```bash
+python tools/acoustic_qgc_bridge.py
+```
 
-<details>
-<summary>Operational Code and Instructions</summary>
+![Subsonus configuration](pics/usbl%20ui.png)
 
-All necessary nodes, including the agent, are designed to start automatically upon system boot. 
+### Flying
 
-Below is the system flowchart:
+![QGC fly view](pics/gqc%20notification%20sample.png)
 
-![System Flowchart](https://github.com/user-attachments/assets/70fa5e70-175d-4226-b3eb-0edac63af185)
+Telemetry, compass, video and warning banners all appear here. Alerts worth
+knowing:
 
-## For manual operation:
+| Message | Meaning |
+|---------|---------|
+| `LEAK! Auto-surfacing` | Water inside. The vehicle is already ascending by itself — recover it. |
+| `ACOUSTIC LINK LOST` | Modems can't hear each other. Check both are powered and submerged. |
+| `FAIL: <sensor>` | That sensor stopped reporting. |
 
-Before proceeding, ensure the following:
+---
 
-- Set your computer's IP address to `192.168.168.100`.
->Note: The UP board is configured with IP `192.168.168.101`, The Doppler Velocity Logger (DVL) is set to IP `192.168.168.102`, as configured here:
-[DVL settings](https://github.com/user-attachments/assets/a2fb2aa6-8320-4a41-9a43-7b12541674ba)
+## Controls
 
+![Controller mapping](pics/xbox_controller.png)
 
-### Running the agent:
-- Make sure that the esp32 is connected to the UP Board using the micro-usb cable.
-- On the UP board, run:
-  
-`ros2 run micro_ros_agent micro_ros_agent serial -b 115200 --dev /dev/ttyUSB0`
+| # | Control | Action |
+|---|---------|--------|
+| 3 | Left stick | Forward / back, and strafe sideways |
+| 1 | Right stick | Turn (yaw), and ascend / descend |
+| A | A button | Toggle one set of lights |
+| B | B button | Toggle the other set of lights |
+| 5 | LB | Camera tilt up |
+| 10 | RB | Camera tilt down (also switches mode) |
 
-After the agent is running, reset the esp32 to let it automatically connect to the agent (You will hear all motors go "DUDU-DU DUUU DUUUUUU").
+Any stick movement cancels Guided mode and returns control to you.
 
-You will also notice the esp32 topics printed on the terminal running the agent.
+### Flight modes
 
-### ROS2 Nodes on UP Board
-After successfully connecting to the agent, the esp32 should publish sensor data. 
+| Mode | Behaviour |
+|------|-----------|
+| **Manual** | You control everything. |
+| **Stabilize** | Holds attitude level while you drive. |
+| **Guided** | *Go to location* — drives to a clicked point, holds depth, then station-keeps until you take over. |
 
-To check the data validity, use:
+---
 
-`ros2 topic echo /esp32/<name-of-sensor-topic>`.
+## Power
 
-> For example /esp32/bar100_data, /esp32/bno055_data
+![Battery wiring](pics/batteries.jpg)
 
-To send motor commands to the esp32 and control the ROV, run the following nodes:
+Two 12 V lithium packs — one for the computers, one for the thrusters — joined
+with XT-style plugs. The small green board steps 12 V down for the electronics.
 
-- **Guidance Node**: Handles vehicle navigation and control, 
-publishs motors and lights commands on `/motor_data and` `/lights_servo_data` topics.
-> ros2 run autopilot guidance_node
-- **DVL Node**: received ethernet DVL data and publish commands on `/dvl/velocity_data` topic.
-> ros2 run autopilot dvl_node
-- **Joystick Node**: Automatically detects the joystick and publish commands on `/joy` topic.
-> ros2 run joy joy_node
-- **Camera Node**: Manages the camera system for real-time video feedback and publishes to the `/camera_image` topic.
-> ros2 run camera_pkg camera_node
+> **Never** join red to black. Always power the vehicle off before connecting or
+> carrying it, and never charge a hot or swollen pack unattended.
 
-- note: 
-   Make sure that the DVL is configured to ping and send data on startup. If not, download the Teledyne Tool from the "Useful information" section, and use it to send a `CS` command on the desired port.
-   
-   To send commands to the DVL using the TRDI Toolz, connect to 192.168.168.102 with port 1033. The DVL is configured to send binary data to port 1034, and string data to port 1037 (Can be configured in 192.168.168.102 on a web             browser).
-   
-   Make sure that the user settings are loaded with `CR` command before start pinging with the CS command. For more help type `?` in the Tool's Terminal, or look in in the datasheets.
+---
 
-</details>
+## Devices and addresses
 
-<details>
-<summary>Useful information and Troubleshooting</summary>
+| Device | Address / Port |
+|--------|----------------|
+| UP Board | `192.168.168.101` |
+| DVL | `192.168.168.102` (cmd 1033, binary 1034, string 1037) |
+| Operator PC | `192.168.168.100` |
+| Subsonus (surface) | `168.254.1.80` |
+| QGC MAVLink | UDP `14550` (Ethernet) / `14551` (acoustic bridge) |
+| ESP32 serial | the `ttyUSB*` with `ID_VENDOR=Silicon_Labs` — auto-detected |
+| BNO055 IMU | I²C `0x28` |
 
-### DVL
+Static IPs on `192.168.168.x/24`. Keep `ROS_DOMAIN_ID` identical on every
+machine (`export ROS_DOMAIN_ID=0`).
 
-To install Teledyne Tool, download, mount and install the dvl.iso file from [this link](https://drive.google.com/drive/folders/1dG6kP1n0Qq8FaZ62429nmEa0FNDRZFCz?usp=sharing).
-In the link you can find the DVL datasheets and configuration settings.
+![DVL configuration](pics/dvl%20ui.png)
 
-### Typical Commands for Troubleshooting
-1. UP:
+---
+
+## Packages
+
+| Package | Contents |
+|---------|----------|
+| `autopilot_pkg` | `guidance_node` (modes, PID, motor mixing, GOTO, leak failsafe), `dvl_node`, `subsonus_node`, `acoustic_bridge_node`, `health_monitor_node` |
+| `mavlink_bridge_pkg` | ROS 2 ↔ QGC MAVLink over UDP |
+| `camera_pkg` | USB camera → `/camera_image` |
+| `gps_pkg` | u-blox GPS → `/gps/fix` |
+| `my_launch_pkg` | Launch files |
+| `esp_sketches/rov_esp_main` | ESP32 firmware (micro-ROS) |
+
+### Key topics
+
+| Topic | Type | Notes |
+|-------|------|-------|
+| `/esp32/bno055_data` | `geometry_msgs/Twist` | `linear.x/y/z` = yaw / pitch / roll |
+| `/esp32/bar100_data` | `geometry_msgs/Vector3` | `x` = depth (m), `y` = pressure, `z` = temp |
+| `/esp32/leak` | `std_msgs/Float64` | `0.0` dry, `1.0` leak |
+| `/motor_data` | `geometry_msgs/Twist` | Motors 1–6 as PWM µs (1100–1900, neutral 1500) |
+| `/lights_servo_data` | `geometry_msgs/Vector3` | light1, light2, camera servo angle |
+| `/guidance/goto_target` | `sensor_msgs/NavSatFix` | Guided-mode destination |
+
+> `Twist` is used two different ways: on `/motor_data` the fields are **motor
+> PWM values**, on `/dvl/velocity_data` they are **velocities**. Check the topic
+> before interpreting the fields.
+
+---
+
+## Building
+
+```bash
+colcon build                                  # whole workspace
+colcon build --packages-select autopilot_pkg  # one package
+colcon test --packages-select autopilot_pkg   # lint + style
+```
+
+### ESP32 firmware
+
+```bash
+arduino-cli compile --fqbn esp32:esp32:esp32da src/esp_sketches/rov_esp_main/rov_esp_main.ino
+arduino-cli upload -p /dev/ttyUSB0 --fqbn esp32:esp32:esp32da src/esp_sketches/rov_esp_main/rov_esp_main.ino
+```
+
+After flashing, restart the micro-ROS agent **with a DTR reset** — otherwise the
+subscriptions come up dead and the motors won't respond.
+
+### Deploying Python changes
+
+The running code lives in the **install** tree, not `src`:
+
+```
+install/<pkg>/lib/python3.8/site-packages/<pkg>/<file>.py
+```
+
+---
+
+## Troubleshooting
+
+| Symptom | Try |
+|---------|-----|
+| QGC won't connect | Check the cable, laptop IP `192.168.168.100`, `ping 192.168.168.101`, AutoConnect-UDP off |
+| Vehicle visible but won't move | ESP32 ↔ ROS link down — check the green indicator, then `./hauv.sh restart` |
+| No video | Video is Ethernet-only; it never runs over the acoustic link |
+| DVL says FAIL | Normal out of water |
+| `ACOUSTIC LINK LOST` | Both modems submerged and powered? Only **one** PC bridge running? |
+| Sensors missing | `./hauv.sh check` to see which, then `./hauv.sh restart` |
+
 ```bash
 ros2 topic list
-ros2 topic echo /name_of_topic
-ros2 topic hz /name_of_topic
-```
-### Automatic Startup Implementation
-All nodes in this projects are running on UP startup, using a system service.
-These are some troubleshooting commands for observing the running service:
-``` bash
-sudo systemctl daemon-reload
-sudo systemctl start rov_nodes.service
-sudo systemctl stop rov_nodes.service
-sudo systemctl restart rov_nodes.service
-sudo systemctl status rov_nodes.service
+ros2 topic hz /esp32/bno055_data
+lsof | grep /dev/ttyUSB0        # who owns the serial port
 sudo journalctl -u rov_nodes.service -f
 ```
-### Additional Technical Details:
-- kill nodes directly using `killall guidance_node`
-- Remember to source your ROS2 workspace: `source ~/ros2_ws/install/setup.bash`
-- When debugging the esp32 using external UART, we can monitor the serial messages:
-`screen /dev/ttyUSB1 115200`
-if screen isn't terminating, kill manually by:
-`ctrl+A, then press K`, or:
-`screen -ls` (to get the session id)
-`screen -XS <session-id> quit`
 
-or simply download and install mobaxterm for better user experience..
+---
 
-</details>
-
-<details>
-<summary>Running Rviz2 Simulation</summary>
-
-- Make sure that the service is up and running, and the guidance node is publishing the motor_data topic.
-if not, start the node manually using `ros2 run autopilot_pkg guidance_node`
-- Check that the motor_data can be seen. If not, check again for ROS_DOMAIN_ID matching.
-- Copy the rov_sim_pkg to rov_ws on the UP board.
-- build using `colcon build`
-- run `ros2 launch rov_sim_pkg rov.launch.py`
-- running joystick node using `ros2 run joy joy_node`
-- start playing.
-Simulation Example:  [link](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/062ddd23-0c9b-471f-b78c-63565cd50323)
-
-</details>
-
-<details>
-<summary>Timeline and Work Progress</summary>
-
-1. **Defining and Characterizing the Model**:
-
-   The initial step was to define and characterize the model. This involved determining the necessary sensors and the conditions in which the HAUV would operate, including depth, speed, and environment.
-
-2. **Choosing the MCU**:
-
-   To ensure the UP board handled only high-level integration, I opted to use a real-time MCU for sensor data readout and motor control.
-   After comparing various MCUs, including the STM32 Nucleo, I chose the ESP32 due to its extensive libraries, robust community support, and numerous PWM output pins.
-
-4. **Setting Up the Software Framework**:
-
-   Next, I set up the software framework. This included installing Ubuntu 20.04 (Jammy), ROS2 Foxy, Arduino CLI, and micro-ros-agent.
-   I then flashed the ESP32 with micro-ros-arduino and set up a basic publisher-subscriber example code over serial communication.  
-   [Getting Started](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/83639ce9-3ba4-4aba-ab67-78f8ffdfe51a)
-
-5. **Connecting Components and Verifying PWM Operation**:
-
-   I proceeded to connect the T200 motors, lights, and a servo to the ESP32 PWM outputs. I sent publish commands from the UP board to verify the operation of multiple PWMs simultaneously, while also checking the ROS framework.  
-   [Moving Motors](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/980f8fde-eba6-4f22-a2f8-1a80e6792300)
-
-5. **Integrating the MPU6050**:
-
-   Subsequently, I integrated the MPU6050 to measure the HAUV's gyro/acceleration data and compensate accordingly. I simulated the ROV movement using motor speeds and MPU acceleration values to calculate yaw, pitch, and roll.  
-   [Simulating Movement](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/4f9a05bb-01a2-4b5e-82c6-5f0618d48bf6)
-
-6. **First Physical Setup**:
-
-   My first physical setup involved attaching four motors and one vertical motor to a wooden plate to check all directional controls.  
-   [First Model Design](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/550c35b5-7a5b-4ee3-b198-ca422e674704)
-
-7. **Designing a More Representative Model**:
-
-   This was followed by designing a more representative model in SolidWorks, ensuring all motors were located in the desired positions.
-   I used aluminum profiles found in the lab, and built a SolidWorks model, which was then constructed in the lab.
-
-   SolidWorks Model: [link](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/6fc3f76a-386f-4c2c-b053-d802bc5e5e01)
-
-   Bringing The Model to life: [link](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/c2f5511f-dc08-4e59-a307-5f374cd1c080)
-
-   Wiring the Model: [link](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/98da028a-8ae3-42d4-87f7-94673a4631b2)
-
-
-8. **Stabilizing the HAUV**:
-
-   The next goal was to stabilize the HAUV without any unwanted rotation. I attempted to calculate counterforces based on MPU6050 gyro and acceleration data but encountered noise issues.
-   I then switched to using the BNO055 for its fused data capabilities.
-
-   Using the mpu6050: [link](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/82a6e954-5ed4-43ee-b376-077be81b91f1)
-   
-   Using the bno055: [link](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/b1dcd281-737d-478e-b8a2-e48cd91a614e)
-
-9. **Integrating the Pathfinder OEM DVL**:
-
-   To address x, y, and z velocities, I integrated the Pathfinder OEM DVL by Teledyne. After wiring the DVL for power and communication, I configured, calibrated, and received its data over the Ethernet protocol. 
-   Initial tests showed promising accuracy in mm resolution for x and y coordinates.
-    
-   DVL Sensor: [link](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/b4049c02-31d9-4bf4-a882-99dd7b1478cd)  
-
-   DVL Depth Test using a bucket: [link](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/59ab2e93-2b21-4b62-8523-20c145469a1e)  
-
-   DVL Real-time Location Test: [link](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/039a02d6-3f1c-48c4-8025-09734b80c4e4)  
-
-   Test Results: [link](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/70ba83be-acbd-4e48-92b7-cc2e006fbb0e)
-
-10. **Final Overall Test**:
-
-   The final overall test involved checking the self-control mode, switching to autonomous mode, and verifying the BNO055 compensation for yaw, pitch, and roll, and the DVL compensation for x, y, and z movements.  
-   Final Test: [link](https://github.com/talshva/HAUV-Final-Engineering-Project/assets/82408347/ec95252b-0728-4c9e-8f26-35af209ef355)
-
-   Motors respond to DVL: [link](https://github.com/user-attachments/assets/333eac3c-9ecc-4d19-b8ef-bbaf6f31b9d0)
-
-   ![Testing the Camera](https://github.com/user-attachments/assets/a61eaffa-4ed9-42ba-8984-1a3d4e673387)
-
-
-</details>
-
-
-<details>
-<summary>Future Implementation</summary>
-
-**Hardware:**
-- Integrate a pair of USBL (Ultra-Short Baseline) systems for enhanced position correction, with one mounted on the upper station and the other on the HAUV.
-- Explore cost-effective alternatives to the current DVL (Doppler Velocity Log) for more budget-friendly operations.
-- Replace the serial camera with an Ethernet camera to connect to the Ethernet switch, aiming for higher frame rates and reduced latency.
-- Incorporate a small square monitor dedicated to error debugging for more efficient troubleshooting.
-
-**Software:**
-- Fine-tune the control loop parameters after conducting real-world underwater experiments to optimize performance.
-- Implement support for communication with the QGroundControl GUI through the gqc_node, similar to the integration in the Tiger system.
-- Enhance the live_node in ROS2 to include real-time checks and notifications if certain topics have not published data for a specified duration.
-- Simulate an underwater environment using Gazebo to test and refine the HAUV's operations.
-- Add a watchdog mechanism on the ESP32 to detect and alert when sensors are disconnected or malfunctioning.
-- Investigate if the DVL can provide additional useful data, such as yaw, pitch, roll values, leak detection, and altitude measurements.
-
-</details>
-
-   
 ## Acknowledgments
 
-- Prof. Hugo Guterman, project advisor.
-- Ben-Gurion University's, Electrical and Computer Engineering Department.
+- **Prof. Hugo Guterman**, project advisor.
+- **Ben-Gurion University**, Department of Electrical and Computer Engineering.
+

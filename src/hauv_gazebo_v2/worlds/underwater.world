@@ -1,0 +1,131 @@
+<?xml version="1.0" ?>
+<!--
+  Underwater world for the HAUV.
+
+  Gravity is normal: the vehicle floats because the BuoyancyPlugin in the URDF
+  applies an upward force from each link's volume against a fluid density of
+  1025 kg/m3 (seawater). Do NOT "fix" sinking by zeroing gravity - that hides
+  buoyancy errors instead of exposing them.
+
+  The seabed sits at z = -20, so there is 20 m of water to dive through.
+  gazebo_ros_state is what publishes /gazebo/model_states, which sensor_bridge
+  turns into the simulated depth and GPS fix.
+-->
+<sdf version="1.6">
+  <world name="underwater">
+
+    <!-- Physics: 1 ms step. Underwater vehicles are slow, so real-time factor
+         matters less than stability of the buoyancy/thrust force balance. -->
+    <!-- gravity belongs to the world, not to <physics>. Putting it inside
+         <physics> makes Gazebo 11 log "SetParam(gravity) std::any_cast" and
+         ignore it. -->
+    <gravity>0 0 -9.81</gravity>
+
+    <physics name="default_physics" default="true" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <!-- Publishes /gazebo/model_states, which sensor_bridge needs for depth. -->
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so">
+      <ros><namespace>/gazebo</namespace></ros>
+      <update_rate>50.0</update_rate>
+    </plugin>
+
+    <include><uri>model://sun</uri></include>
+
+    <!-- Seabed 20 m down -->
+    <model name="seabed">
+      <static>true</static>
+      <pose>0 0 -20 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+          <material>
+            <ambient>0.25 0.22 0.16 1</ambient>
+            <diffuse>0.35 0.31 0.22 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!--
+      Water surface at z = 0.
+
+      Gazebo Classic's BuoyancyPlugin has no notion of a free surface - it
+      applies buoyancy at every height, so a positively-trimmed vehicle rises
+      forever (it reached z = +10 m in testing, i.e. 10 m in the air, still
+      "floating"). This slab is a collision-only ceiling whose underside sits at
+      z = 0, so the vehicle rises, meets it and stays there, which is what a
+      positively buoyant ROV actually does.
+
+      It is a rigid contact, not surface dynamics: expect it to touch and settle
+      rather than bob. Nothing pushes back down on it, so it cannot be launched
+      from above the water - spawn below z = 0 (the launch file does).
+    -->
+    <model name="water_surface">
+      <static>true</static>
+      <pose>0 0 0.05 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>400 400 0.1</size></box></geometry>
+          <surface>
+            <friction><ode><mu>0.05</mu><mu2>0.05</mu2></ode></friction>
+            <bounce><restitution_coefficient>0</restitution_coefficient></bounce>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>400 400 0.02</size></box></geometry>
+          <material>
+            <ambient>0.20 0.45 0.55 0.30</ambient>
+            <diffuse>0.20 0.45 0.55 0.30</diffuse>
+          </material>
+          <transparency>0.75</transparency>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Murky green-blue tint so it reads as underwater rather than sky -->
+    <scene>
+      <ambient>0.25 0.35 0.40 1</ambient>
+      <background>0.10 0.28 0.35 1</background>
+      <shadows>false</shadows>
+      <fog>
+        <color>0.10 0.28 0.35 1</color>
+        <type>linear</type>
+        <start>3</start>
+        <end>35</end>
+        <density>0.5</density>
+      </fog>
+    </scene>
+
+    <!--
+      Start the camera UNDER water, below the surface slab.
+
+      The old pose put it at z = +1, above the 400 x 400 m water_surface slab,
+      pitched only 14 deg down - so the slab filled the view and the vehicle,
+      which spawns at z = -3 to -8 and roughly 6 m away (i.e. ~50 deg below the
+      camera), was both occluded and outside the frustum. It looked like the
+      model had failed to spawn.
+
+      From (-6, -6, -4) the spawn range -3 to -8 sits between 18 deg above and
+      14 deg below the view axis, so it is in shot at every spawn depth this
+      package uses.
+
+      To keep it in shot once it moves, right-click the model in the GUI and
+      pick Follow. Do NOT reach for `gz camera -c user_camera -f hauv`: it reads
+      like the scriptable version of that, but it blocks forever here (measured
+      rc=124 under an 8 s timeout, as does `gz camera -l`).
+    -->
+    <gui fullscreen="false">
+      <camera name="user_camera">
+        <pose>-6 -6 -4 0 0.2 0.78</pose>
+      </camera>
+    </gui>
+
+  </world>
+</sdf>

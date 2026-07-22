@@ -1,3 +1,27 @@
-build/
+# ---- Colcon / ROS 2 build outputs ---------------------------------------
+# NOTE: build/ is intentionally committed in this project (snapshot of the
+# workspace build). install/ and log/ are regenerated and are not tracked.
 install/
 log/
+
+# ---- Python -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ---- Arduino / ESP32 build artifacts ------------------------------------
+*.elf
+*.bin.tmp
+
+# ---- Editors / OS -------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ---- Office temporary lock files ----------------------------------------
+~$*
+
+# ---- Runtime logs -------------------------------------------------------
+*.log

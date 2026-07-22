@@ -1,0 +1,363 @@
+<?xml version="1.0"?>
+<!--
+  HAUV - Gazebo Classic 11 simulation model (ROS2 Foxy).
+
+  This is NOT the RViz model with a plugin bolted on. RViz needs geometry and
+  frames; Gazebo needs mass, inertia, collision, buoyancy and forces. What
+  carried over from hauv_lite.urdf is the geometry and the joint tree - about a
+  third of this file. The rest is new.
+
+  Everything mass-related below came out of the CAD, with vendor masses
+  substituted where Fusion had no material (it was defaulting the batteries,
+  PCBs and the DVL to ALUMINIUM - a 4.4 kg DVL electronics box and 1.9 kg
+  battery packs). Corrected figures:
+
+      base_link (all but the thrusters)  9.972 kg
+      6 x T200                           0.344 kg each
+      TOTAL                             12.036 kg
+      displacement                       7063 cm3 -> 7.240 kgf in seawater
+      NET                               -4.80 kg  (see the two warnings below)
+
+  ==================== WARNING 1: it sinks ====================
+  4.80 kg negative. Neutral trim needs ~7.7 L of syntactic foam (rho 0.40) -
+  more volume than the pressure hull itself (4.5 L). Until that foam is in the
+  model, the sim will just fall to the seabed and every result will be wrong.
+
+  ==================== WARNING 2: it is roll-unstable ====================
+  CG sits at Z = +8.2 mm, CB at Z = +1.8 mm, so the centre of gravity is 6.4 mm
+  ABOVE the centre of buoyancy. That is statically unstable in roll and pitch -
+  it will capsize.
+
+  This matters because the 5-DOF thruster layout was justified on the vehicle
+  being *passively* roll-stable, and with the Subsonus (1.4 kg at Z +121) and
+  the upper light pair up top, it currently is not. Roll is unactuated, so
+  nothing recovers it.
+
+  The two warnings share a fix: the ~7.7 L of foam has to go HIGH. Mounted above
+  the hull it both trims the vehicle and lifts CB well clear of CG. Do that
+  before trusting any simulation output.
+
+  ==================== Foxy caveat ====================
+  ROS2 Foxy is EOL and the modern underwater stack (gz-sim buoyancy +
+  hydrodynamics, DAVE) targets Humble and later. This model therefore targets
+  Gazebo Classic 11:
+    - buoyancy      : libBuoyancyPlugin.so, ships with Gazebo Classic. Real.
+    - thrust        : libgazebo_ros_force.so per thruster, ships with
+                      gazebo_ros_pkgs. Real - drive it from /motor_data.
+    - hydrodynamics : NOT AVAILABLE. <velocity_decay> below is crude isotropic
+                      damping, not added mass or quadratic drag. Good enough to
+                      stop the vehicle coasting forever; not good enough for
+                      control tuning. Proper added-mass needs a custom plugin.
+-->
+<robot name="hauv">
+
+  <material name="alu">      <color rgba="0.72 0.74 0.76 1.0"/></material>
+  <material name="cw_green"> <color rgba="0.13 0.45 0.20 1.0"/></material>
+  <material name="ccw_blue"> <color rgba="0.13 0.18 0.45 1.0"/></material>
+
+  <link name="base_link">
+    <visual><origin xyz="-0.0226 0 0" rpy="0 1.5707963 0"/>
+      <geometry><cylinder radius="0.0635" length="0.300"/></geometry>
+      <material name="alu"/></visual>
+    <visual><origin xyz="0.1274 0 0" rpy="0 0 0"/>
+      <geometry><sphere radius="0.0635"/></geometry>
+      <material name="alu"/></visual>
+    <visual><origin xyz="0.205 0.095 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.220 0.020 0.012"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="0.205 -0.095 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.220 0.020 0.012"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="-0.2275 0.095 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.175 0.020 0.012"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="-0.2275 -0.095 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.175 0.020 0.012"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="-0.0558 0 0.1253" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.053" length="0.0934"/></geometry><material name="alu"/></visual>
+    <visual><origin xyz="-0.085 0 -0.08615" rpy="0 0 0"/>
+      <geometry><cylinder radius="0.04185" length="0.0443"/></geometry><material name="alu"/></visual>
+
+    <!-- Collision kept to two primitives on purpose: contact solving is the
+         expensive part of a Gazebo step, and detail here buys nothing. -->
+    <collision><origin xyz="-0.0226 0 0" rpy="0 1.5707963 0"/>
+      <geometry><cylinder radius="0.0635" length="0.375"/></geometry></collision>
+    <collision><origin xyz="0 0 -0.070" rpy="0 0 0"/>
+      <geometry><box size="0.630 0.210 0.012"/></geometry></collision>
+
+    <!-- From CAD, vendor masses substituted. COM is 12 mm ABOVE the tube axis
+         (the Subsonus). See WARNING 2. -->
+    <inertial>
+      <origin xyz="-0.0221 0.0 0.0120" rpy="0 0 0"/>
+      <mass value="9.972"/>
+      <inertia ixx="0.104697" ixy="0.0" ixz="0.0"
+               iyy="0.343638" iyz="0.0" izz="0.283995"/>
+    </inertial>
+  </link>
+
+  <gazebo reference="base_link">
+    <material>Gazebo/Grey</material>
+    <!-- Crude stand-in for hydrodynamic drag. NOT added mass. -->
+    <!--
+      Crude stand-in for hydrodynamic drag. NOT added mass.
+
+      RETUNED 2026-07-20. These were 0.20 / 0.30, which made the vehicle almost
+      immovable: 70 N of vertical thrust produced 0.001 m/s, slower than its own
+      passive buoyancy drift. Gazebo applies velocity_decay PER TIMESTEP, not
+      per second, so at dt = 0.001 s a value of 0.20 is a ~5 ms damping constant.
+      Terminal velocity works out as a*dt/decay, which measured 0.058 m/s under
+      400 N - i.e. the damping, not the thrust, decided how fast it moved.
+
+      Sized so full thrust gives a realistic ROV speed instead:
+          vertical  70 N / 12 kg = 5.8 m/s^2 ;  0.0058 -> ~1.0 m/s terminal
+      Real drag is quadratic in velocity; this is linear, so it is only honest
+      near the speed it was tuned at. Good enough to exercise control loops,
+      not good enough for hydrodynamic claims.
+    -->
+    <velocity_decay>
+      <linear>0.006</linear>
+      <angular>0.02</angular>
+    </velocity_decay>
+  </gazebo>
+
+  <!-- ============ thrusters ============
+       Inertia is a solid cylinder r 48.65, L 88, m 0.344:
+         Izz (spin) = 0.5 m r^2            = 4.07e-4
+         Ixx = Iyy  = m(3r^2 + L^2)/12     = 4.26e-4
+       Joint damping is not cosmetic here - an undamped continuous joint with
+       almost no inertia is a stiff, badly conditioned state for the solver. -->
+
+  <link name="t1_front_left">
+    <visual><geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="cw_green"/></visual>
+    <collision><geometry><cylinder radius="0.04865" length="0.088"/></geometry></collision>
+    <inertial><mass value="0.344"/>
+      <inertia ixx="0.000426" ixy="0" ixz="0" iyy="0.000426" iyz="0" izz="0.000407"/></inertial>
+  </link>
+  <joint name="t1_front_left_joint" type="continuous">
+    <parent link="base_link"/><child link="t1_front_left"/>
+    <origin xyz="0.250 0.095 -0.0144" rpy="0 1.5707963 0.7853982"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.005" friction="0.0"/>
+  </joint>
+
+  <link name="t2_front_right">
+    <visual><geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="ccw_blue"/></visual>
+    <collision><geometry><cylinder radius="0.04865" length="0.088"/></geometry></collision>
+    <inertial><mass value="0.344"/>
+      <inertia ixx="0.000426" ixy="0" ixz="0" iyy="0.000426" iyz="0" izz="0.000407"/></inertial>
+  </link>
+  <joint name="t2_front_right_joint" type="continuous">
+    <parent link="base_link"/><child link="t2_front_right"/>
+    <origin xyz="0.250 -0.095 -0.0144" rpy="0 1.5707963 -0.7853982"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.005" friction="0.0"/>
+  </joint>
+
+  <link name="t3_rear_left">
+    <visual><geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="ccw_blue"/></visual>
+    <collision><geometry><cylinder radius="0.04865" length="0.088"/></geometry></collision>
+    <inertial><mass value="0.344"/>
+      <inertia ixx="0.000426" ixy="0" ixz="0" iyy="0.000426" iyz="0" izz="0.000407"/></inertial>
+  </link>
+  <joint name="t3_rear_left_joint" type="continuous">
+    <parent link="base_link"/><child link="t3_rear_left"/>
+
+    <!-- REAR PAIR ROTATED TO 135 deg (was 45 deg). On a vectored ROV the rear
+         thrusters must point AFT. As exported, all four horizontals pointed
+         forward (+Z = (+0.70, +-0.71, 0)), so guidance_node's (+,+,-,-)
+         forward mixing summed to exactly zero thrust - the vehicle managed
+         0.117 m/s on residuals while the verticals did 1.1 m/s. -->
+    <origin xyz="-0.250 0.095 -0.0144" rpy="0 1.5707963 2.3561945"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.005" friction="0.0"/>
+  </joint>
+
+  <link name="t4_rear_right">
+    <visual><geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="cw_green"/></visual>
+    <collision><geometry><cylinder radius="0.04865" length="0.088"/></geometry></collision>
+    <inertial><mass value="0.344"/>
+      <inertia ixx="0.000426" ixy="0" ixz="0" iyy="0.000426" iyz="0" izz="0.000407"/></inertial>
+  </link>
+  <joint name="t4_rear_right_joint" type="continuous">
+    <parent link="base_link"/><child link="t4_rear_right"/>
+    <origin xyz="-0.250 -0.095 -0.0144" rpy="0 1.5707963 -2.3561945"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.005" friction="0.0"/>
+  </joint>
+
+  <link name="t5_vert_front">
+    <visual><geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="cw_green"/></visual>
+    <collision><geometry><cylinder radius="0.04865" length="0.088"/></geometry></collision>
+    <inertial><mass value="0.344"/>
+      <inertia ixx="0.000426" ixy="0" ixz="0" iyy="0.000426" iyz="0" izz="0.000407"/></inertial>
+  </link>
+  <joint name="t5_vert_front_joint" type="continuous">
+    <parent link="base_link"/><child link="t5_vert_front"/>
+    <origin xyz="0.305 0 -0.0063" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.005" friction="0.0"/>
+  </joint>
+
+  <link name="t6_vert_rear">
+    <visual><geometry><cylinder radius="0.04865" length="0.088"/></geometry>
+      <material name="ccw_blue"/></visual>
+    <collision><geometry><cylinder radius="0.04865" length="0.088"/></geometry></collision>
+    <inertial><mass value="0.344"/>
+      <inertia ixx="0.000426" ixy="0" ixz="0" iyy="0.000426" iyz="0" izz="0.000407"/></inertial>
+  </link>
+  <joint name="t6_vert_rear_joint" type="continuous">
+    <parent link="base_link"/><child link="t6_vert_rear"/>
+    <origin xyz="-0.305 0 -0.0063" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <dynamics damping="0.005" friction="0.0"/>
+  </joint>
+
+  <gazebo reference="t1_front_left"><material>Gazebo/Green</material></gazebo>
+  <gazebo reference="t4_rear_right"><material>Gazebo/Green</material></gazebo>
+  <gazebo reference="t5_vert_front"><material>Gazebo/Green</material></gazebo>
+  <gazebo reference="t2_front_right"><material>Gazebo/Blue</material></gazebo>
+  <gazebo reference="t3_rear_left"><material>Gazebo/Blue</material></gazebo>
+  <gazebo reference="t6_vert_rear"><material>Gazebo/Blue</material></gazebo>
+
+  <!-- ============ buoyancy ============
+       Ships with Gazebo Classic. Volumes are the DISPLACED volume, which is not
+       the solid volume: the sealed hull displaces its outer envelope (4513 cm3)
+       while wet parts displace only their own solid volume. The thrusters carry
+       their own entries because they are separate links.
+
+       base_link  6026 cm3, centre of volume Z +3.9 mm
+       each T200   173 cm3 -->
+  <gazebo>
+    <plugin name="buoyancy" filename="libBuoyancyPlugin.so">
+      <fluid_density>1025</fluid_density>
+      <link name="base_link">
+        <!--
+          RAISED ABOVE THE CENTRE OF MASS - this is a stability fix, not a
+          cosmetic one.
+
+          CAD gave center_of_volume z = +0.0039 while the centre of mass sits at
+          z = +0.0120, i.e. buoyancy acting 8 mm BELOW gravity. That is an
+          unstable equilibrium - an inverted pendulum - and the simulated
+          vehicle simply kept tipping: pitch ran 9 deg -> 32 deg in 40 s and
+          never settled.
+
+          Every ROV is built the other way round: buoyancy (foam) high, mass
+          (batteries) low, so the pair forms a righting couple and the vehicle
+          self-levels. z = 0.045 puts the centre of buoyancy ~33 mm above the
+          centre of mass, which is a normal amount of righting moment. The x is
+          aligned with the centre of mass (-0.0221) so there is no static pitch.
+
+          If you measure the real centre of buoyancy, put it here - but keep it
+          above the centre of mass or the model will tumble again.
+        -->
+        <center_of_volume>-0.0221 0 0.045</center_of_volume>
+        <!--
+          TRIMMED FOR THE SIM - not a CAD measurement.
+
+          The CAD value was 0.006026 m3, the geometric volume of the pressure
+          tube alone. Real displacement of the assembled vehicle is larger
+          (frame, housings, foam). With the CAD figure the model came out
+          4.8 kg NEGATIVE (-47 N): it sank like a stone, and the two vertical
+          thrusters would have needed ~67 % throttle just to hover - so depth
+          hold would behave nothing like the real vehicle.
+
+          12.036 kg mass, 0.001038 m3 of thrusters, seawater 1025 kg/m3:
+              (0.010802 + 0.001038) * 1025 = 12.14 kg buoyant
+          about +0.1 kg positive - the right direction (an ROV should drift up
+          on power loss, not sink) but deliberately small, because Gazebo's
+          BuoyancyPlugin has NO WATER SURFACE: it applies buoyancy at every
+          height, so anything strongly positive simply rises forever. At +0.3 kg
+          the model climbed 0.37 m in 40 s. At +0.1 kg the drift is ~3 mm/s,
+          slow enough to see control effects clearly and trivially held by the
+          vertical thrusters. Put the true measured displacement here when you
+          have it.
+        -->
+        <volume>0.010802</volume>
+      </link>
+      <link name="t1_front_left"><center_of_volume>0 0 0</center_of_volume><volume>0.000173</volume></link>
+      <link name="t2_front_right"><center_of_volume>0 0 0</center_of_volume><volume>0.000173</volume></link>
+      <link name="t3_rear_left"><center_of_volume>0 0 0</center_of_volume><volume>0.000173</volume></link>
+      <link name="t4_rear_right"><center_of_volume>0 0 0</center_of_volume><volume>0.000173</volume></link>
+      <link name="t5_vert_front"><center_of_volume>0 0 0</center_of_volume><volume>0.000173</volume></link>
+      <link name="t6_vert_rear"><center_of_volume>0 0 0</center_of_volume><volume>0.000173</volume></link>
+    </plugin>
+  </gazebo>
+
+  <!-- ============ thrust ============
+       One gazebo_ros_force per thruster. Each applies a wrench to its link, so
+       the force direction follows the link frame automatically - the thrust
+       axis is the link's local +Z, exactly as the joint defines it.
+
+       Feed these with geometry_msgs/Wrench, force.z = newtons. A T200 is about
+       +51 / -40 N at 16 V, so map PWM 1100..1900 onto that (it is NOT linear in
+       PWM - use the BlueRobotics thrust curve if you care about fidelity).
+
+       Publish to /hauv/thruster/tN. -->
+  <gazebo>
+    <plugin name="t1_force" filename="libgazebo_ros_force.so">
+      <ros><namespace>/hauv</namespace><remapping>gazebo_ros_force:=thruster/t1</remapping></ros>
+      <link_name>t1_front_left</link_name><force_frame>link</force_frame>
+    </plugin>
+    <plugin name="t2_force" filename="libgazebo_ros_force.so">
+      <ros><namespace>/hauv</namespace><remapping>gazebo_ros_force:=thruster/t2</remapping></ros>
+      <link_name>t2_front_right</link_name><force_frame>link</force_frame>
+    </plugin>
+    <plugin name="t3_force" filename="libgazebo_ros_force.so">
+      <ros><namespace>/hauv</namespace><remapping>gazebo_ros_force:=thruster/t3</remapping></ros>
+      <link_name>t3_rear_left</link_name><force_frame>link</force_frame>
+    </plugin>
+    <plugin name="t4_force" filename="libgazebo_ros_force.so">
+      <ros><namespace>/hauv</namespace><remapping>gazebo_ros_force:=thruster/t4</remapping></ros>
+      <link_name>t4_rear_right</link_name><force_frame>link</force_frame>
+    </plugin>
+    <plugin name="t5_force" filename="libgazebo_ros_force.so">
+      <ros><namespace>/hauv</namespace><remapping>gazebo_ros_force:=thruster/t5</remapping></ros>
+      <link_name>t5_vert_front</link_name><force_frame>link</force_frame>
+    </plugin>
+    <plugin name="t6_force" filename="libgazebo_ros_force.so">
+      <ros><namespace>/hauv</namespace><remapping>gazebo_ros_force:=thruster/t6</remapping></ros>
+      <link_name>t6_vert_rear</link_name><force_frame>link</force_frame>
+    </plugin>
+  </gazebo>
+
+  <!-- ============ sensors ============ -->
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/><child link="imu_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+  <gazebo reference="imu_link">
+    <sensor name="bno055" type="imu">
+      <always_on>true</always_on><update_rate>50</update_rate>
+      <plugin name="imu_plugin" filename="libgazebo_ros_imu_sensor.so">
+        <ros><namespace>/hauv</namespace><remapping>~/out:=imu</remapping></ros>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <link name="camera_link"/>
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/><child link="camera_link"/>
+    <origin xyz="0.1274 0 0" rpy="0 0 0"/>
+  </joint>
+  <gazebo reference="camera_link">
+    <sensor name="fwd_camera" type="camera">
+      <always_on>true</always_on><update_rate>15</update_rate>
+      <camera><horizontal_fov>1.396</horizontal_fov>
+        <image><width>640</width><height>480</height></image>
+        <clip><near>0.05</near><far>30</far></clip></camera>
+      <plugin name="camera_plugin" filename="libgazebo_ros_camera.so">
+        <ros><namespace>/hauv</namespace></ros>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <link name="dvl_link"/>
+  <joint name="dvl_joint" type="fixed">
+    <parent link="base_link"/><child link="dvl_link"/>
+    <origin xyz="-0.0850 0 -0.1083" rpy="0 0 0"/>
+  </joint>
+
+</robot>

@@ -1,26 +1,27 @@
 from setuptools import setup
 
-package_name = 'my_launch_pkg'
+package_name = "my_launch_pkg"
 
 setup(
     name=package_name,
-    version='0.0.0',
+    version="0.0.0",
     packages=[package_name],
     data_files=[
-        ('share/ament_index/resource_index/packages',
-            ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', ['my_launch_pkg/launch/start_nodes.launch.py']),
+        ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
+        ("share/" + package_name, ["package.xml"]),
+        (
+            "share/" + package_name + "/launch",
+            ["my_launch_pkg/launch/start_nodes.launch.py"],
+        ),
     ],
-    install_requires=['setuptools'],
+    install_requires=["setuptools"],
     zip_safe=True,
-    maintainer='Tal Shvartzberg',
-    maintainer_email='talshva@gmail.com',
-    description='Launch package for ROV nodes',
-    license='TODO: License declaration',
-    tests_require=['pytest'],
+    maintainer="Tal Shvartzberg",
+    maintainer_email="mattyrot@post.bgu.ac.il",
+    description="Launch package for ROV nodes",
+    license="TODO: License declaration",
+    tests_require=["pytest"],
     entry_points={
-        'console_scripts': [
-        ],
+        "console_scripts": [],
     },
 )

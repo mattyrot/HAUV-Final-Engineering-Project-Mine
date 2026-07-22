@@ -4,7 +4,7 @@
   <name>autopilot_pkg</name>
   <version>0.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="talshva@gmail.com">up</maintainer>
+  <maintainer email="mattyrot@post.bgu.ac.il">up</maintainer>
   <license>TODO: License declaration</license>
 
   <test_depend>ament_copyright</test_depend>

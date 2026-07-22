@@ -3,6 +3,7 @@ from pprint import pprint
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from std_msgs.msg import Float64
 
 def parse_system_attitude(data):
     try:
@@ -108,31 +109,44 @@ class DVLNode(Node):
 
     def __init__(self):
         super().__init__('dvl_node')
-        self.get_logger().info(f"DVL Node has been started!")
+        self.get_logger().info('DVL Node has been started!')
         self.publisher_ = self.create_publisher(Twist, '/dvl/velocity_data', 10)
-        self.HOST = '192.168.168.102'  # DVL IP address
-        self.PORT = 1037  # PD6 port
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.connect((self.HOST, self.PORT))
+        self.range_publisher_ = self.create_publisher(Float64, '/dvl/range_to_bottom', 10)
+        self.LISTEN_PORT = 1037  # DVL pushes PD6 UDP datagrams to us on this port
+
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.bind(('0.0.0.0', self.LISTEN_PORT))
+        self.socket.settimeout(0.1)
+        self.get_logger().info(f'Listening for DVL UDP on port {self.LISTEN_PORT}...')
+
         self.timer = self.create_timer(0.02, self.timer_callback)  # 50 Hz
 
     def timer_callback(self):
         try:
-            data = self.socket.recv(4096).decode('ascii')  # Adjust buffer size as needed
+            data, addr = self.socket.recvfrom(4096)
             if data:
-                parsed_data = parse_pd6_message(data)
-                # print_parsed_data(parsed_data)
+                parsed_data = parse_pd6_message(data.decode('ascii'))
                 if parsed_data and 'earth_referenced_velocity' in parsed_data:
                     velocity_data = parsed_data['earth_referenced_velocity']
-                    if velocity_data and velocity_data['status'] == 'A':  # Only publish if data is good
+                    if velocity_data and velocity_data['status'] == 'A':
                         twist = Twist()
                         twist.linear.x = velocity_data['east_velocity']
                         twist.linear.y = velocity_data['north_velocity']
                         twist.linear.z = velocity_data['upward_velocity']
                         self.publisher_.publish(twist)
-                        self.get_logger().info(f"Published velocity: {twist}")
+                if parsed_data and 'earth_referenced_distance' in parsed_data:
+                    dist_data = parsed_data['earth_referenced_distance']
+                    if dist_data:
+                        rng = dist_data['range_to_bottom']
+                        if rng > 0.0:
+                            msg = Float64()
+                            msg.data = rng
+                            self.range_publisher_.publish(msg)
+        except socket.timeout:
+            pass
         except Exception as e:
-            self.get_logger().error(f"Error in timer_callback: {e}")
+            self.get_logger().error(f'DVL error: {e}')
 
 def main(args=None):
     rclpy.init(args=args)

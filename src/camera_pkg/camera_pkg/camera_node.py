@@ -12,7 +12,7 @@ class CameraNode(Node):
         self.timer_period = 0.1  # seconds
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
         self.bridge = CvBridge()
-        self.cap = cv2.VideoCapture(0)  # Assumes camera is the first device
+        self.cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
 
     def timer_callback(self):
         ret, frame = self.cap.read()
