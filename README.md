@@ -60,17 +60,18 @@ Joystick / QGC ────────────> /joy  |  /joy_acoustic
 
 ### Inside the electronics tray
 
-![Electronics tray](pics/electronics%20numbered.png)
+![Electronics tray](pics/all_electronics.jpg)
 
 | # | Board |
 |---|-------|
 | 1 | **UP Board** — the main computer (large heatsink) |
 | 2 | **Indicator light** — solid = ESP32 talking to ROS 2, off = link down |
 | 3 | **ESP32** — real-time motor and sensor controller |
-| 4 | **Thruster** |
-| 5 | **I²C connector** — to the temperature sensor |
-| 6 | **GPS antenna** |
-
+| 4 | **Thruster**|
+| 5 | **BNO05** — IMU |
+| 6 | **BAR100** - Pressure Sensor |
+| 7 | **I²C Bus Splitter**  |
+| 8 | **BME280** - Temprature Sensor|
 ---
 
 ## Quick start
@@ -123,7 +124,7 @@ python tools/acoustic_qgc_bridge.py
 
 ### Flying
 
-![QGC fly view](pics/gqc%20notification%20sample.png)
+![QGC fly view](pics/qgc%20working.png)
 
 Telemetry, compass, video and warning banners all appear here. Alerts worth
 knowing:
