@@ -148,7 +148,7 @@ knowing:
 | A | A button | Toggle one set of lights |
 | B | B button | Toggle the other set of lights |
 | 5 | LB | Camera tilt up |
-| 10 | RB | Camera tilt down (also switches mode) |
+| 10 | RB | Camera tilt down |
 
 Any stick movement cancels Guided mode and returns control to you.
 

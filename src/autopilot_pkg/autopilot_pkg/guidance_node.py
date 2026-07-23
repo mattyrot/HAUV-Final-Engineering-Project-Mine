@@ -157,12 +157,15 @@ class GuidanceNode(Node):
         for i in range(min(n, 16)):
             self.joystick_buttons[i] = msg.buttons[i]
 
-        # Mode toggle — button[5]
-        if self.joystick_buttons[5] and not self.previous_button_states[5]:
-            self.joystick_mode = not self.joystick_mode
-            self.get_logger().info(f'Switched to {"Joystick" if self.joystick_mode else "Autonomous"} mode')
-            if not self.joystick_mode:
-                self.target_orientation = self.orientation.copy()
+        # Mode toggle — button[5]  *** DISABLED FOR NOW ***
+        # RB (button 5) is also camera-down (see the camera-servo block below), so a
+        # single RB press flipped joystick<->autonomous as a side effect. Disabled
+        # until the mode toggle is moved to a dedicated, unused button.
+        # if self.joystick_buttons[5] and not self.previous_button_states[5]:
+        #     self.joystick_mode = not self.joystick_mode
+        #     self.get_logger().info(f'Switched to {"Joystick" if self.joystick_mode else "Autonomous"} mode')
+        #     if not self.joystick_mode:
+        #         self.target_orientation = self.orientation.copy()
 
         # Light toggles — buttons[0] and [1]
         if self.joystick_buttons[0] and not self.previous_button_states[0]:
